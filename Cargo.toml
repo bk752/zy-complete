@@ -1,0 +1,11 @@
+[package]
+name = "zy_complete"
+version = "0.1.0"
+authors = ["brian <bk75320@gmail.com>"]
+
+[dependencies]
+hyper = "*"
+language-tags="*"
+hyper-native-tls="*"
+rustc-serialize="*"
+rpassword="*"
