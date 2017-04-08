@@ -1,6 +1,6 @@
 [package]
 name = "zy_complete"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["brian <bk75320@gmail.com>"]
 
 [dependencies]

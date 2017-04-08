@@ -24,7 +24,7 @@ fn login_user(user: String, pass: String, client: &Client, head: Headers) -> (u6
     // make request and get response
     let mut res = client.post("https://s1.zybooks.com/v1/signin")
         .body(&*info)
-        .headers(head.clone())
+        .headers(head)
         .send()
         .unwrap();
 
@@ -44,7 +44,7 @@ fn get_books(user_id: u64, token: &str, client: &Client, head: Headers) -> Vec<S
     let url = format!(r#"https://s1.zybooks.com/v1/user/{}/zybooks?auth_token={}"#, user_id, token);
 
     let mut res = client.get(&url)
-        .headers(head.clone())
+        .headers(head)
         .send()
         .unwrap();
 
@@ -73,7 +73,7 @@ fn get_questions(user_id: u64, token: &str, book_code: &str, client: &Client, he
     let url = format!(r#"https://s1.zybooks.com/v1/zybook/{}/activities/{}?auth_token={}"#, book_code, user_id, token);
 
     let mut res = client.get(&url)
-        .headers(head.clone())
+        .headers(head)
         .send()
         .unwrap();
 
@@ -96,6 +96,22 @@ fn get_questions(user_id: u64, token: &str, book_code: &str, client: &Client, he
     }
     questions
 }
+fn complete_question(user_id: u64, token: &str, book_code: &str, id: &str, part: usize, client: &Client, head: Headers) {
+    let url = format!(r#"https://s1.zybooks.com/v1/content_resource/{}/activity"#, id);
+    let info = format!(r#"{{"part":{},"complete":true,"metadata":"","zybook_code":"{}","auth_token":"{}","timestamp":"{}"}}"#,
+                       part, book_code, token, "test");
+
+    // make request and get response
+    let mut res = client.post(&url)
+        .body(&*info)
+        .headers(head)
+        .send()
+        .unwrap();
+
+    let mut data = String::new();
+    res.read_to_string(&mut data).unwrap();
+}
+
 fn main() {
     let ssl = NativeTlsClient::new().unwrap();
     let connector = HttpsConnector::new(ssl);
@@ -110,37 +126,44 @@ fn main() {
     let pass = read_password().unwrap();
 
     // create post header
-    let mut head = Headers::new();
-    head.set(Accept(vec![qitem(Mime(TopLevel::Application, SubLevel::Json, vec![])),
+    let mut head_post = Headers::new();
+    head_post.set(Accept(vec![qitem(Mime(TopLevel::Application, SubLevel::Json, vec![])),
                          qitem(Mime(TopLevel::Text, SubLevel::Javascript, vec![])),
                          QualityItem::new(Mime(TopLevel::Star, SubLevel::Star, vec![]), Quality(10))]));
-    head.set(AcceptEncoding(vec![qitem(Encoding::Gzip),
+    head_post.set(AcceptEncoding(vec![qitem(Encoding::Gzip),
                                  qitem(Encoding::Deflate),
                                  qitem(Encoding::EncodingExt("br".to_owned())),]));
-    head.set(AcceptLanguage(vec![qitem(langtag!(en;;;US)),
+    head_post.set(AcceptLanguage(vec![qitem(langtag!(en;;;US)),
                                  QualityItem::new(langtag!(en), Quality(800)),]));
-    head.set(Connection::keep_alive());
+    head_post.set(Connection::keep_alive());
     //head.set(ContentLength(34u64));
-    head.set(ContentType(Mime(TopLevel::Application, SubLevel::Json, vec![])));
-    head.set(Host{hostname: "s1.zybooks.com".to_owned(), port: None,});
-    head.set(Origin::new("https", "zybooks.zyante.com", None));
-    head.set(Referer("https://zybooks.zyante.com/".to_owned()));
-    head.set(UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/57.0.2987.133 Safari/537.36".to_owned()));
+    head_post.set(ContentType(Mime(TopLevel::Application, SubLevel::Json, vec![])));
+    head_post.set(Host{hostname: "s1.zybooks.com".to_owned(), port: None,});
+    head_post.set(Origin::new("https", "zybooks.zyante.com", None));
+    head_post.set(Referer("https://zybooks.zyante.com/".to_owned()));
+    head_post.set(UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/57.0.2987.133 Safari/537.36".to_owned()));
 
     // TODO: figure out way of calling without clone
-    let user_data = login_user(user, pass, &client, head.clone());
+    let (user_id, token) = login_user(user, pass, &client, head_post.clone());
 
-    head.remove::<ContentType>();
-    head.set(AcceptEncoding(vec![qitem(Encoding::Gzip),
+    let mut head_get = head_post.clone();
+    head_get.remove::<ContentType>();
+    head_get.set(AcceptEncoding(vec![qitem(Encoding::Gzip),
                                  qitem(Encoding::Deflate),
+                                 qitem(Encoding::EncodingExt("sdch".to_owned())),
                                  qitem(Encoding::EncodingExt("br".to_owned())),]));
 
-    let books = get_books(user_data.0, &user_data.1, &client, head.clone());
+    let books = get_books(user_id, &token, &client, head_get.clone());
     for (i, book) in books.iter().enumerate() {
         println!("{}) {}", i+1, book);
     }
     let mut choice = String::new();
     io::stdin().read_line(&mut choice).unwrap();
     let choice_val = choice.trim().parse::<usize>().unwrap();
-    get_questions(user_data.0, &user_data.1, &books[choice_val-1], &client, head.clone());
+    let questions = get_questions(user_id, &token, &books[choice_val-1], &client, head_get.clone());
+    for (id, parts) in questions {
+        for part in 0..parts {
+            complete_question(user_id, &token, &books[choice_val-1], &id, part, &client, head_post.clone());
+        }
+    }
 }
