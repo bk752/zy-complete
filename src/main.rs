@@ -68,7 +68,7 @@ fn get_books(user_id: u64, token: &str, client: &Client, head: Headers) -> Vec<S
     books
 }
 
-fn get_questions(user_id: u64, token: &str, book_code: &str, client: &Client, head: Headers) -> Vec<(String, i64)> {
+fn get_questions(user_id: u64, token: &str, book_code: &str, client: &Client, head: Headers) -> Vec<(String, usize)> {
 
     let url = format!(r#"https://s1.zybooks.com/v1/zybook/{}/activities/{}?auth_token={}"#, book_code, user_id, token);
 
@@ -85,10 +85,15 @@ fn get_questions(user_id: u64, token: &str, book_code: &str, client: &Client, he
     gz.read_to_string(&mut data).unwrap();
 
     let info = Json::from_str(&data).unwrap();
-    // print response
-    println!("{}", data);
+    let question_list = info.search("data").unwrap().as_array().unwrap()[0].as_array().unwrap();
 
-    let questions: Vec<(String, i64)> =  Vec::new();
+    let mut questions: Vec<(String, usize)> =  Vec::new();
+    for chapter in question_list {
+        let id_list = chapter.as_object().unwrap();
+        for (id, parts) in id_list {
+            questions.push((id.to_owned(), parts.as_array().unwrap().len()));
+        }
+    }
     questions
 }
 fn main() {
