@@ -75,7 +75,7 @@ fn get_books(user_id: u64, token: &str, client: &Client, head: Headers) -> Vec<S
 }
 
 /// Get list of questions in book
-fn get_questions(user_id: u64, token: &str, book_code: &str, client: &Client, head: Headers) -> Vec<(String, usize)> {
+fn get_questions(user_id: u64, token: &str, book_code: &str, client: &Client, head: Headers) -> Vec<Vec<Vec<(String, usize)>>> {
 
     let url = format!(r#"https://s1.zybooks.com/v1/zybook/{}/activities/{}?auth_token={}"#, book_code, user_id, token);
 
@@ -93,15 +93,26 @@ fn get_questions(user_id: u64, token: &str, book_code: &str, client: &Client, he
     gz.read_to_string(&mut data).unwrap();
 
     let info = Json::from_str(&data).unwrap();
-    let question_list = info.search("data").unwrap().as_array().unwrap()[0].as_array().unwrap();
+    let question_list = info.search("data").unwrap().as_array().unwrap();
 
     // find questions in response
-    let mut questions: Vec<(String, usize)> =  Vec::new();
+    let mut questions: Vec<Vec<Vec<(String, usize)>>> = Vec::new();
     for chapter in question_list {
-        let id_list = chapter.as_object().unwrap();
-        for (id, parts) in id_list {
-            questions.push((id.to_owned(), parts.as_array().unwrap().len()));
+        let mut chapter_vec: Vec<Vec<(String, usize)>> = Vec::new();
+
+        let section_list = chapter.as_array().unwrap();
+        for section in section_list {
+            let mut section_vec: Vec<(String, usize)> = Vec::new();
+
+            let id_list = section.as_object().unwrap();
+            for (id, parts) in id_list {
+                section_vec.push((id.to_owned(), parts.as_array().unwrap().len()));
+            }
+
+            chapter_vec.push(section_vec);
         }
+
+        questions.push(chapter_vec);
     }
     questions
 }
@@ -178,19 +189,36 @@ fn main() {
 
     // let user choose which book to complete
     let books = get_books(user_id, &token, &client, head_get.clone());
+
+    println!("Choose book: ");
     for (i, book) in books.iter().enumerate() {
         println!("{}) {}", i+1, book);
     }
     let mut choice = String::new();
     io::stdin().read_line(&mut choice).unwrap();
-    let choice_val = choice.trim().parse::<usize>().unwrap();
+    let book_choice = choice.trim().parse::<usize>().unwrap();
 
-    let questions = get_questions(user_id, &token, &books[choice_val-1], &client, head_get.clone());
+    let questions = get_questions(user_id, &token, &books[book_choice-1], &client, head_get.clone());
 
-    // complete all questions in book
-    for (id, parts) in questions {
-        for part in 0..parts {
-            complete_question(&token, &books[choice_val-1], &id, part, &client, head_post.clone());
+    println!("Choose chapter from 1 to {}, or 0 for all chapters:", questions.len());
+    choice = String::new();
+    io::stdin().read_line(&mut choice).unwrap();
+    let chapter_choice = choice.trim().parse::<usize>().unwrap();
+    let mut low = 0;
+    let mut high = questions.len();
+    if chapter_choice != 0 {
+        low = chapter_choice - 1;
+        high = chapter_choice;
+    }
+    for (i, chapter) in questions[low..high].iter().enumerate() {
+        for (j, section) in chapter.iter().enumerate() {
+            // complete all questions in book
+            for &(ref id, parts) in section {
+                for part in 0..parts {
+                    println!("Doing chapter {}, section {}, question {}, part {}", i + 1, j + 1, id,  part + 1);
+                    complete_question(&token, &books[book_choice-1], &id, part, &client, head_post.clone());
+                }
+            }
         }
     }
 }
